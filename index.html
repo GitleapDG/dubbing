@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>励步 - 奇声妙想 Firstleap Voice Magic</title>
+  <title>励步 - Firstleap Voice Magic</title>
   <style>
     :root {
       --bg-cream: #F9F6E8;
@@ -416,7 +416,7 @@
     </video>
     <div class="welcome-overlay">
       <div class="welcome-title">Firstleap Voice Magic</div>
-      <div class="welcome-subtitle">奇声妙想 · 配音秀</div>
+      <div class="welcome-subtitle">配音秀</div>
       <div>
         <button id="welcomeEnterBtn" class="welcome-cta">进入体验 ▶</button>
       </div>
@@ -458,8 +458,11 @@
     <button class="btn btn-retry" onclick="closeWxHint()" style="width:220px; margin-top:16px;">我知道了</button>
   </div>
 
+  <!-- 新增：用于监听混音的音频元素 -->
+  <audio id="monitorAudio" style="display:none;" playsinline></audio>
+
   <div class="container">
-    <h1>Firstleap Voice Magic<br><span style="font-size:18px; color:#888; font-weight:normal;">奇声妙想配音秀</span></h1>
+    <h1>Firstleap Voice Magic<br><span style="font-size:18px; color:#888; font-weight:normal;">配音秀</span></h1>
 
     <div class="step-label"><span class="step-badge">1</span>选择级别</div>
     <select id="levelSelect" onchange="updateUnits()">
@@ -496,10 +499,6 @@
         <button id="pauseToggleBtn" class="btn pause" onclick="togglePauseDuringRecording()">暂停</button>
       </div>
 
-      <!-- 人性化：佩戴耳机提示（可一直显示，鼓励配音时佩戴耳机） -->
-      <div class="headphone-tip" id="headphoneTips" style="display:block;">
-        请佩戴耳机进行配音，避免回声与麦克风自啸。若使用扬声器，请将音量调低并确保环境安静。
-      </div>
 
       <div class="tip" style="margin-top: 6px;">🎧 <b>温馨提示：</b>配音前请佩戴耳机，以防回声啸叫！</div>
       <div class="status-text" id="statusText"></div>
@@ -1040,7 +1039,8 @@
       }
 
       video.currentTime = 0;
-      // 不再强制静音，确保原声与麦克风混音输出正常
+      // 录制时先把视频静音，避免与混音输出重复播放；监听通过混音流实现
+      video.muted = true;
       video.volume = 1.0;
       video.controls = false;
 
@@ -1093,7 +1093,7 @@
         sourceVideo.connect(videoGainNode);
         // 将混合音频加入 dest
         videoGainNode.connect(dest);
-        // 监听监听输出：将 dest 连接到实际音频输出
+        // 监听输出：将 dest 连接到实际音频输出
         dest.connect(audioCtx.destination);
       } catch (e) {
         console.warn("MediaElementAudioSourceNode 不可用，尝试回退流路由:", e);
@@ -1189,6 +1189,14 @@
       const pauseBtn = document.getElementById('pauseToggleBtn');
       if (pauseBtn) pauseBtn.textContent = '暂停';
       video.onended = stopRecording;
+
+      // 设置监听：让用户能听到混音后的声音
+      const monitorEl = document.getElementById('monitorAudio');
+      if (monitorEl && dest && dest.stream) {
+        monitorEl.srcObject = dest.stream;
+        // 可能需要用户手势才能播放
+        monitorEl.play().catch(() => { /* 忽略播放错误，用户可能需要再次手动播放 */ });
+      }
     }
 
     // Canvas 绘制函数
@@ -1259,12 +1267,16 @@
       videoGainNode = null;
       dest = null;
 
+      // 录制结束后恢复视频音量/静音状态
+      video.muted = false;
+
       actionBtn.innerHTML = "🎙️ 准备就绪，开始配音";
       actionBtn.className = "btn btn-record";
       document.getElementById("statusText").innerText = "✨ 视频生成中，请稍候...";
       document.getElementById("statusText").style.color = "var(--pear-yellow)";
     }
 
+    // 画面与音频混合的处理进度
     // 合成进度 & 结果展示
     function beginProcessingOverlay() {
       const overlay = document.getElementById('processing-overlay');
