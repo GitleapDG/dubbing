@@ -270,7 +270,6 @@
             object-fit: contain;
         }
         video:fullscreen { border: none; border-radius: 0; width: 100%; height: 100%; }
-        /* 关键改动：Canvas 用于录制画面，需要隐藏 */
         #processCanvas { display: none; }
         .status-text { margin-top: 15px; font-weight: bold; color: var(--rabbit-red); min-height: 24px; font-size: 15px; }
         .preview-box {
@@ -480,7 +479,7 @@
 
             <div class="btn-group">
                 <button class="btn btn-retry" onclick="resetRecording()">🔄 重录 Retry</button>
-                <a id="downloadLink" class="btn btn-download" style="display: none;">💾 保存视频到手机相册 (Save)</a>
+                <a id="downloadLink" class="btn btn-download" style="display: none;">💾 保存/分享视频</a>
             </div>
 
             <div id="waitingHint" style="text-align: center; margin: 20px 0; display: none;">
@@ -489,7 +488,7 @@
             </div>
 
             <div style="font-size:10px; color:#999; margin-top:15px; text-align:center;" id="saveTipText">
-                * 在 Safari 中，请**长按上方的视频**选择“存储视频”保存。
+                * iOS Safari：点击下方“保存/分享视频”，在系统分享面板中选择“存储视频”保存到相册。
             </div>
         </div>
     </div>
@@ -608,7 +607,7 @@
                 "https://file-aliyun.firstleap.cn/homework/teacher/video/20251113/1763021343327574ffe.mp4",
                 "https://file-aliyun.firstleap.cn/homework/teacher/video/20251113/1763021345500e16489.mp4",
                 "https://file-aliyun.firstleap.cn/homework/teacher/video/20251113/1763021348021750704.mp4",
-                "https://file-aliyun.firstleap.cn/homework/teacher/video/20251113/1763023453394e0d4dd.mp4",
+                "https://file-aliyun.firstleap.cn/homework/teacher/video/20251126/1763023453394e0d4dd.mp4",
                 "https://file-aliyun.firstleap.cn/homework/teacher/video/20251113/176302135256081bc9e.mp4",
                 "https://file-aliyun.firstleap.cn/homework/teacher/video/20251113/1763021362061eb0385.mp4",
                 "https://file-aliyun.firstleap.cn/homework/teacher/video/20251113/1763021363940857b8e.mp4"
@@ -699,6 +698,13 @@
         const isIOS = /iPhone|iPad|iPod/i.test(ua);
         const isSafari = /Safari/i.test(ua) && !/Chrome/i.test(ua); // 简单的Safari检测
 
+        // 是否支持 Web Share API 的文件分享（iOS 15+/Safari 15+ 普遍可用）
+        const supportsFileShare = (() => {
+            try {
+                const testFile = new File(["x"], "x.txt", { type: "text/plain" });
+                return !!(navigator.canShare && navigator.canShare({ files: [testFile] }));
+            } catch (e) { return false; }
+        })();
 
         // ================= 麦克风权限和AudioContext初始化（新增/修改） =================
         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -1229,7 +1235,7 @@
             document.getElementById("statusText").style.color = "var(--pear-yellow)";
         }
 
-        // ================= 合成进度 & 结果展示 (未修改) =================
+        // ================= 合成进度 & 结果展示 =================
         function beginProcessingOverlay() {
             const overlay = document.getElementById('processing-overlay');
             const bar = document.getElementById('progressBar');
@@ -1270,7 +1276,7 @@
             }, 30);
         }
 
-        // 生成结果 + 兼容微信/Safari保存的处理 (未修改)
+        // 生成结果 + 兼容微信/Safari保存的处理（已修改：优先使用 Web Share API）
         function generateVideoAndShowResult() {
             if(recordedChunks.length === 0) {
                 alert("录制失败：数据为空。可能是因为Canvas捕获失败或麦克风未授权。");
@@ -1292,18 +1298,9 @@
                 let ext = '.mp4';
                 if (lowerType.includes('webm')) ext = '.webm';
                 finalFilename = `Firstleap_Voice_${Date.now()}${ext}`;
-                
-                downloadBtn.removeAttribute('download');
 
-                downloadBtn.textContent = "💾 保存视频到手机相册 (Save)";
-                downloadBtn.onclick = function (e) {
-                    e.preventDefault();
-                    openWeChatSavePage();
-                };
-                
-                document.getElementById('saveTipText').innerHTML = isWeChat 
-                    ? '* 在微信中，请点击上方的 **“保存视频”** 按钮获取保存指引。' 
-                    : '* 在 Safari 中，请**长按上方的视频**选择“存储视频”保存。';
+                // 动态配置按钮行为
+                setupSaveButton(downloadBtn);
 
                 document.getElementById("actionBtn").style.display = "none";
 
@@ -1317,6 +1314,7 @@
                 document.getElementById("statusText").innerText = "🎉 制作成功！Excellent!";
                 document.getElementById("statusText").style.color = "var(--rabbit-red)";
 
+                // 小延迟后展示保存按钮
                 setTimeout(() => {
                     document.getElementById("waitingHint").style.display = "none";
                     document.getElementById("downloadLink").style.display = "flex";
@@ -1330,7 +1328,70 @@
             }
         }
 
-        // 在微信或 Safari 中打开一个仅包含视频的页面，便于长按保存或分享 (未修改)
+        // 根据环境配置“保存/分享视频”按钮
+        function setupSaveButton(downloadBtn) {
+            const tip = document.getElementById('saveTipText');
+            downloadBtn.removeAttribute('href');
+            downloadBtn.removeAttribute('download');
+            downloadBtn.onclick = null;
+
+            if (isWeChat) {
+                downloadBtn.textContent = "💾 保存视频到手机相册 (Save)";
+                downloadBtn.onclick = function(e) {
+                    e.preventDefault();
+                    openWeChatSavePage();
+                };
+                tip.innerHTML = '* 在微信中，请点击上方的 “保存视频” 按钮获取保存指引。';
+                return;
+            }
+
+            if ((isIOS || isSafari) && supportsFileShare) {
+                downloadBtn.textContent = "💾 保存/分享视频";
+                downloadBtn.onclick = async function(e) {
+                    e.preventDefault();
+                    await saveVideoViaShare();
+                };
+                tip.innerHTML = '* iOS Safari：点击下方“保存/分享视频”，在系统分享面板中选择“存储视频”保存到相册。';
+                return;
+            }
+
+            // 其他浏览器（Android/PC）：直接下载
+            downloadBtn.textContent = "💾 下载视频 (Download)";
+            downloadBtn.href = finalObjectURL;
+            downloadBtn.download = finalFilename;
+            downloadBtn.target = "_blank";
+            tip.innerHTML = '* 若浏览器未自动下载，请右键/长按保存或在浏览器菜单中选择“下载”。';
+        }
+
+        // 使用 Web Share API 调起系统分享面板（iOS Safari 推荐方式）
+        async function saveVideoViaShare() {
+            if (!finalBlob) {
+                alert("暂未生成可保存的视频，请先完成配音。");
+                return;
+            }
+            try {
+                const file = new File([finalBlob], finalFilename || 'Firstleap_Voice.mp4', { type: finalBlob.type || 'video/mp4' });
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: 'Firstleap Voice Magic',
+                        text: '奇声妙想 · 配音秀'
+                    });
+                    // 用户可能选择了“存储视频”，或分享给其他应用
+                } else {
+                    // 极少数老设备上不支持文件分享，退回指引页
+                    openWeChatSavePage();
+                }
+            } catch (err) {
+                // 用户取消分享不需要提示
+                if (err && err.name !== 'AbortError') {
+                    console.warn('Share failed:', err);
+                    alert("分享失败。您也可以尝试在浏览器菜单中选择“分享/保存”，或更换为系统浏览器再试。");
+                }
+            }
+        }
+
+        // 在微信或 Safari 中打开一个仅包含视频的页面，便于长按保存或分享 (保留)
         function openWeChatSavePage() {
             if (!finalObjectURL) {
                 alert("暂未生成可保存的视频，请先完成配音。");
@@ -1338,6 +1399,7 @@
             }
             const w = window.open(finalObjectURL, '_blank');
             if (w) {
+                // 某些浏览器会直接在新页原生播放器中展示，用户可在系统菜单中“保存视频”
                 w.focus(); 
                 return;
             }
@@ -1346,7 +1408,7 @@
             
             if(isSafari) {
                 document.getElementById('saveHintTitle').textContent = '无法自动保存：请手动操作';
-                document.getElementById('saveHintText').innerHTML = 'Safari 浏览器不支持自动下载。请 **长按** 下方的视频，在弹出菜单中选择 **“存储视频”** 即可保存到相册。';
+                document.getElementById('saveHintText').innerHTML = 'Safari 浏览器可能不支持直接下载。请 **点击下方“播放”后，长按视频**，在弹出菜单中选择 **“存储视频”** 保存到相册。';
             } else if (isWeChat) {
                 document.getElementById('saveHintTitle').textContent = '在微信中保存视频';
                 document.getElementById('saveHintText').innerHTML = '方式一：长按下方视频，选择“保存到手机”<br>方式二：点右上角“...”，选择“在浏览器中打开”，再保存';
@@ -1365,9 +1427,16 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             const downloadBtn = document.getElementById('downloadLink');
-            if (isIOS || isSafari) {
+            // 初始化按钮提示（实际文本在生成结果时会根据环境再设置一次）
+            if ((isIOS || isSafari) && supportsFileShare) {
+                downloadBtn.textContent = "💾 保存/分享视频";
+                document.getElementById('saveTipText').innerHTML = '* iOS Safari：点击下方“保存/分享视频”，在系统分享面板中选择“存储视频”保存到相册。';
+            } else if (isWeChat) {
                 downloadBtn.textContent = "💾 保存视频到手机相册 (Save)";
-                document.getElementById('saveTipText').innerHTML = '* 在 Safari 中，请**长按上方的视频**选择“存储视频”保存。';
+                document.getElementById('saveTipText').innerHTML = '* 在微信中，请点击上方的 “保存视频” 按钮获取保存指引。';
+            } else {
+                downloadBtn.textContent = "💾 下载视频 (Download)";
+                document.getElementById('saveTipText').innerHTML = '* 若浏览器未自动下载，请右键/长按保存或在浏览器菜单中选择“下载”。';
             }
         });
     </script>
