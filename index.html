@@ -341,12 +341,16 @@
       pointer-events: auto;
     }
     .record-overlay .btn {
-      padding: 6px 10px;
-      border-radius: 6px;
+      padding: 6px 12px;
+      border-radius: 8px;
       font-size: 12px;
       font-weight: 800;
       cursor: pointer;
       border: none;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      margin-top: 0;
+      display: inline-block;
+      width: auto;
     }
     .record-overlay .pause { background: #6c7dff; color: white; }
 
@@ -494,8 +498,10 @@
         您的浏览器不支持视频标签。
       </video>
 
-      <!-- 右上角覆盖层：仅显示暂停按钮，取消“完成配音”按钮 -->
+      <!-- 右上角覆盖层：返回、完成、暂停 -->
       <div id="recordOverlay" class="record-overlay" aria-label="录制控制" style="display:none;">
+        <button class="btn" style="background:rgba(0,0,0,0.6); color:white; border:1px solid rgba(255,255,255,0.3);" onclick="abortRecording()">返回</button>
+        <button class="btn" style="background:var(--rabbit-red); color:white;" onclick="stopRecording()">完成</button>
         <button id="pauseToggleBtn" class="btn pause" onclick="togglePauseDuringRecording()">暂停</button>
       </div>
 
@@ -1274,6 +1280,54 @@
       actionBtn.className = "btn btn-record";
       document.getElementById("statusText").innerText = "✨ 视频生成中，请稍候...";
       document.getElementById("statusText").style.color = "var(--pear-yellow)";
+    }
+    
+    // 新增：取消/返回功能，不生成视频，直接重置状态
+    function abortRecording() {
+      if (!isRecording) return;
+      isRecording = false;
+      cancelAnimationFrame(animationFrameId);
+      exitFullscreenMode();
+
+      const video = document.getElementById("mainVideo");
+      video.pause();
+      video.controls = true;
+      video.muted = false;
+
+      // 隐藏右上角覆盖层
+      document.getElementById('recordOverlay').style.display = 'none';
+
+      // 停止录制，但移除onstop回调以避免触发视频合成
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.onstop = null;
+        try { mediaRecorder.stop(); } catch(e) {}
+      }
+
+      // 资源清理（同 stopRecording）
+      if (videoStream) { videoStream.getTracks().forEach(track => track.stop()); videoStream = null; }
+      if (canvasStream) { canvasStream.getTracks().forEach(track => track.stop()); canvasStream = null; }
+
+      if (audioCtx) {
+        if(sourceMic) { try { sourceMic.disconnect(); } catch(e){} }
+        if(sourceVideo) { try { sourceVideo.disconnect(); } catch(e){} }
+        if(micGainNode) { try { micGainNode.disconnect(); } catch(e){} }
+        if(videoGainNode) { try { videoGainNode.disconnect(); } catch(e){} }
+        if(dest) { try { dest.disconnect(); } catch(e){} }
+      }
+      sourceMic = null;
+      sourceVideo = null;
+      micGainNode = null;
+      videoGainNode = null;
+      dest = null;
+
+      // 重置UI
+      const actionBtn = document.getElementById("actionBtn");
+      actionBtn.innerHTML = "🎙️ 准备就绪，开始配音";
+      actionBtn.className = "btn btn-record";
+      actionBtn.disabled = false;
+      document.getElementById("playBtn").style.display = "block";
+      document.getElementById("statusText").innerText = "❌ 已取消录制";
+      document.getElementById("statusText").style.color = "#555";
     }
 
     // 画面与音频混合的处理进度
