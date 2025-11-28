@@ -43,7 +43,7 @@
         .welcome-screen {
             position: fixed;
             inset: 0;
-            z-index: 100000; /* 高于其它遮罩 */
+            z-index: 100000;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -281,11 +281,20 @@
             border: none; box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
         }
 
-        /* ================= 录制时全屏 ================= */
+        /* ================= 录制时全屏（修复竖屏偏移） ================= */
         body.recording-mode { overflow: hidden; background: #000; padding: 0; }
         body.recording-mode .container {
-            max-width: 100%; height: 100vh; border-radius: 0; border: none; padding: 10px 10px 20px;
-            display: flex; flex-direction: column; justify-content: flex-start; align-items: center; background: #000;
+            max-width: 100%;
+            height: 100vh; /* fallback */
+            border-radius: 0; border: none;
+            padding: calc(env(safe-area-inset-top, 0px) + 8px) 10px calc(env(safe-area-inset-bottom, 0px) + 80px);
+            display: flex; flex-direction: column; align-items: center; background: #000;
+        }
+        @supports (height: 100svh) {
+            body.recording-mode .container { height: 100svh; }
+        }
+        @supports (height: 100dvh) {
+            body.recording-mode .container { height: 100dvh; }
         }
         body.recording-mode .step-label,
         body.recording-mode select,
@@ -295,11 +304,30 @@
         body.recording-mode .status-text,
         body.recording-mode h1 { display: none !important; }
         body.recording-mode #video-container {
-            margin: 0; height: auto; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; background: #000;
+            margin: 0;
+            width: 100%;
+            display: flex;
+            flex: 1; /* 占满剩余高度，视频垂直居中 */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #000;
         }
-        body.recording-mode #mainVideo { width: 100%; max-height: calc(100vh - 160px); border: none; box-shadow: none; }
+        body.recording-mode #mainVideo {
+            width: 100%;
+            height: auto;
+            max-height: 100%;
+            border: none; box-shadow: none;
+        }
         body.recording-mode #actionBtn {
-            position: relative; bottom: auto; left: auto; transform: none; width: 80%; max-width: 260px; margin: 16px auto 0; z-index: 1001;
+            position: fixed;
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+            left: 50%;
+            transform: translateX(-50%);
+            width: min(88%, 320px);
+            max-width: 320px;
+            margin: 0;
+            z-index: 1002;
         }
 
         /* ================= 加载层 ================= */
@@ -417,7 +445,7 @@
     <div id="wxHintOverlay" class="overlay-fullscreen" style="background: rgba(0,0,0,0.92);">
         <div style="color:#fff; font-size:22px; font-weight:900; margin-bottom:10px;" id="saveHintTitle">长按保存视频/音频</div>
         <div style="color:#fff; font-size:14px; opacity:0.9; max-width:520px;" id="saveHintText">
-            请 **长按** 下方的视频播放器，<br>在弹出的菜单中选择 **“存储视频”** 即可保存到相册。
+            请 <b>长按</b> 下方的视频播放器，<br>在弹出的菜单中选择 <b>“存储视频”</b> 即可保存到相册。
         </div>
         <video id="wxHintVideo" playsinline webkit-playsinline x5-playsinline controls style="width:88%; max-width:520px; border-radius:12px; background:#000; margin-top:14px;"></video>
         <button class="btn btn-retry" onclick="closeWxHint()" style="width:220px; margin-top:16px;">我知道了</button>
@@ -672,8 +700,8 @@
         let audioCtx = null;
         let micStream = null;
         let canvasStream = null;     // 关键：用于承载 Canvas 捕获的视频轨道
-        let videoStream = null;      // 原始视频流（已弃用 captureStream，但变量保留）
-        let sourceVideo = null;
+        let videoStream = null;      // 原始视频流（仅在极端回退中使用）
+        let sourceVideo = null;      // 视频音频源节点（基于 MediaElementAudioSourceNode 或回退流）
         let sourceMic = null;
         let dest = null;
         let micGainNode = null;
@@ -896,6 +924,7 @@
             mainVideo.currentTime = 0;
             mainVideo.pause();
             mainVideo.controls = true;
+            mainVideo.muted = false; // 重置为可正常预览
             exitFullscreenMode();
 
             const preview = document.getElementById("previewVideo");
@@ -914,7 +943,7 @@
             document.getElementById("video-container").scrollIntoView({behavior: "smooth"});
         }
 
-        // ================= 核心录制逻辑（修复：使用 toggleRecording，调整 Canvas 绘制时机） =================
+        // ================= 核心录制逻辑（修复：使用 MediaElementAudioSourceNode 混音，避免原音消失） =================
         function getBestMimeType() {
             const types = [
                 "video/mp4;codecs=avc1",
@@ -1016,7 +1045,7 @@
             }
 
             video.currentTime = 0;
-            video.muted = false;
+            video.muted = true; // 重要：静音元素本身，通过 AudioContext 输出并录制原音，避免双声与系统抑制
             video.volume = 1.0;
             video.controls = false;
 
@@ -1053,9 +1082,9 @@
             micGainNode = audioCtx.createGain();
             videoGainNode = audioCtx.createGain();
             micGainNode.gain.value = 1.5;   // 放大麦克风
-            videoGainNode.gain.value = 1.0; // 降低原视频音量
+            videoGainNode.gain.value = 1.0; // 原视频音量
 
-            // 连接麦克风
+            // 连接麦克风到录制混音（不外放，避免啸叫）
             if (micStream && micStream.getAudioTracks().length > 0) {
                 sourceMic = audioCtx.createMediaStreamSource(micStream);
                 sourceMic.connect(micGainNode);
@@ -1066,30 +1095,36 @@
                 return;
             }
 
-            // 连接原视频音频
+            // 连接原视频音频：首选 MediaElementAudioSourceNode（更稳定，不会中途消失）
             try {
-                if (video.captureStream) {
-                    videoStream = video.captureStream();
-                } else {
-                    videoStream = video.mozCaptureStream ? video.mozCaptureStream() : null;
+                if (!video._elementAudioSource) {
+                    video._elementAudioSource = audioCtx.createMediaElementSource(video);
                 }
-                
-                if (videoStream && videoStream.getAudioTracks().length > 0) {
-                    if (!video._streamAudioSourceNode) {
-                        sourceVideo = audioCtx.createMediaStreamSource(videoStream);
-                        video._streamAudioSourceNode = sourceVideo;
-                    } else {
-                        sourceVideo = video._streamAudioSourceNode;
-                    }
-
-                    sourceVideo.connect(videoGainNode);
-                    videoGainNode.connect(dest);
-                    // 输出到扬声器，方便配音时监听原声
-                    sourceVideo.connect(audioCtx.destination);
-                }
+                sourceVideo = video._elementAudioSource;
+                sourceVideo.connect(videoGainNode);
+                // 录制混音
+                videoGainNode.connect(dest);
+                // 同时外放原视频音频，便于配音时监听
+                videoGainNode.connect(audioCtx.destination);
             } catch (e) {
-                console.warn("原视频音频路由失败 (可能跨域或无音轨):", e);
-                // 即使失败，继续录制，但只录制麦克风和画面。
+                console.warn("MediaElementAudioSourceNode 不可用，尝试回退流路由:", e);
+                try {
+                    if (video.captureStream) {
+                        videoStream = video.captureStream();
+                    } else {
+                        videoStream = video.mozCaptureStream ? video.mozCaptureStream() : null;
+                    }
+                    if (videoStream && videoStream.getAudioTracks().length > 0) {
+                        sourceVideo = audioCtx.createMediaStreamSource(videoStream);
+                        sourceVideo.connect(videoGainNode);
+                        videoGainNode.connect(dest);
+                        videoGainNode.connect(audioCtx.destination);
+                    } else {
+                        console.warn("回退流中无音频轨道，仅录制麦克风。");
+                    }
+                } catch (e2) {
+                    console.warn("原视频音频路由失败:", e2);
+                }
             }
 
             const mixedAudioTrack = dest.stream.getAudioTracks()[0];
@@ -1148,7 +1183,7 @@
                 return;
             }
 
-            // 修复：在成功 start 且置位 isRecording 后再启动 Canvas 绘制循环
+            // 在成功 start 且置位 isRecording 后再启动 Canvas 绘制循环
             isRecording = true;
             drawToCanvas(video, ctx, canvas);
 
@@ -1194,6 +1229,7 @@
             const actionBtn = document.getElementById("actionBtn");
             video.pause();
             video.controls = true;
+            video.muted = false; // 退出录制后恢复原片预览声音
 
             // 防止误触重复开始，处理期间禁用按钮
             actionBtn.disabled = true;
@@ -1209,7 +1245,7 @@
                 }
             }
 
-            // 清理所有流
+            // 清理可能创建的回退流
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
                 videoStream = null;
@@ -1222,12 +1258,17 @@
             
             // 清理 AudioContext 节点连接
             if (audioCtx) {
-                if(sourceMic) sourceMic.disconnect();
-                if(sourceVideo) sourceVideo.disconnect();
-                if(micGainNode) micGainNode.disconnect();
-                if(videoGainNode) videoGainNode.disconnect();
-                if(dest) dest.disconnect();
+                if(sourceMic) { try { sourceMic.disconnect(); } catch(e){} }
+                if(sourceVideo) { try { sourceVideo.disconnect(); } catch(e){} }
+                if(micGainNode) { try { micGainNode.disconnect(); } catch(e){} }
+                if(videoGainNode) { try { videoGainNode.disconnect(); } catch(e){} }
+                if(dest) { try { dest.disconnect(); } catch(e){} }
             }
+            sourceMic = null;
+            sourceVideo = null;
+            micGainNode = null;
+            videoGainNode = null;
+            dest = null;
 
             actionBtn.innerHTML = "🎙️ 准备就绪，开始配音";
             actionBtn.className = "btn btn-record";
@@ -1377,13 +1418,10 @@
                         title: 'Firstleap Voice Magic',
                         text: '奇声妙想 · 配音秀'
                     });
-                    // 用户可能选择了“存储视频”，或分享给其他应用
                 } else {
-                    // 极少数老设备上不支持文件分享，退回指引页
                     openWeChatSavePage();
                 }
             } catch (err) {
-                // 用户取消分享不需要提示
                 if (err && err.name !== 'AbortError') {
                     console.warn('Share failed:', err);
                     alert("分享失败。您也可以尝试在浏览器菜单中选择“分享/保存”，或更换为系统浏览器再试。");
@@ -1399,7 +1437,6 @@
             }
             const w = window.open(finalObjectURL, '_blank');
             if (w) {
-                // 某些浏览器会直接在新页原生播放器中展示，用户可在系统菜单中“保存视频”
                 w.focus(); 
                 return;
             }
@@ -1408,7 +1445,7 @@
             
             if(isSafari) {
                 document.getElementById('saveHintTitle').textContent = '无法自动保存：请手动操作';
-                document.getElementById('saveHintText').innerHTML = 'Safari 浏览器可能不支持直接下载。请 **点击下方“播放”后，长按视频**，在弹出菜单中选择 **“存储视频”** 保存到相册。';
+                document.getElementById('saveHintText').innerHTML = 'Safari 浏览器可能不支持直接下载。请 <b>点击下方“播放”后，长按视频</b>，在弹出菜单中选择 <b>“存储视频”</b> 保存到相册。';
             } else if (isWeChat) {
                 document.getElementById('saveHintTitle').textContent = '在微信中保存视频';
                 document.getElementById('saveHintText').innerHTML = '方式一：长按下方视频，选择“保存到手机”<br>方式二：点右上角“...”，选择“在浏览器中打开”，再保存';
