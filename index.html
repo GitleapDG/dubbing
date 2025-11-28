@@ -341,6 +341,26 @@
                 animation: none !important;
             }
         }
+        
+        /* 麦克风授权失败的提示框 */
+        #micErrorOverlay {
+            background: rgba(255, 82, 83, 0.95);
+            font-family: sans-serif;
+            padding: 30px;
+            border-radius: 20px;
+            max-width: 80%;
+        }
+        #micErrorOverlay .error-icon {
+            font-size: 60px;
+            margin-bottom: 10px;
+        }
+        #micErrorOverlay .error-text {
+            font-size: 18px;
+            margin-top: 10px;
+            color: white;
+            opacity: 0.8;
+            font-weight: normal;
+        }
     </style>
 </head>
 <body class="welcome-active">
@@ -353,6 +373,7 @@
                playsinline
                webkit-playsinline
                x5-playsinline
+               loop
                preload="auto"
                x5-video-player-type="h5-page"
                x5-video-orientation="portrait"
@@ -367,6 +388,18 @@
             </div>
         </div>
         </div>
+
+    <div id="micAuthErrorOverlay" class="overlay-fullscreen" style="background: rgba(0,0,0,0.85); z-index: 99999;">
+        <div id="micErrorOverlay">
+            <div class="error-icon">🚫</div>
+            <div class="overlay-text">麦克风权限被拒绝！</div>
+            <div class="error-text">
+                录音功能无法使用，请进入手机或浏览器设置，<br>
+                **允许本网站访问您的麦克风**后重试。
+            </div>
+            <button class="btn btn-retry" onclick="closeMicErrorHint()" style="width:160px; margin-top:20px; background:#fff; color:#FF5253; box-shadow:none;">我知道了</button>
+        </div>
+    </div>
 
     <div id="countdown-overlay" class="overlay-fullscreen">
         <div class="countdown-number" id="countdownText">3</div>
@@ -428,7 +461,7 @@
             <div class="status-text" id="statusText"></div>
 
             <button class="btn btn-play" id="playBtn" onclick="togglePreview()">▶️ 预览原片 Preview</button>
-            <button class="btn btn-record" id="actionBtn" onclick="toggleRecording()">🎙️ 准备就绪，开始配音</button>
+            <button class="btn btn-record" id="actionBtn" onclick="prepareAndStartRecording()">🎙️ 准备就绪，开始配音</button>
             
             <canvas id="processCanvas" style="display: none;"></canvas>
         </div>
@@ -461,7 +494,7 @@
     </div>
 
     <script>
-        // ============== 全屏欢迎动画控制（未修改） ==============
+        // ============== 全屏欢迎动画控制（已修改） ==============
         (function setupWelcome() {
             const welcome = document.getElementById('welcome');
             const wVideo = document.getElementById('welcomeVideo');
@@ -497,25 +530,21 @@
                 }, 650);
             };
 
-            // 自动收起（视频可播放后一段时间）
-            let autoTimer = setTimeout(hideWelcome, 2600);
-            wVideo.addEventListener('canplay', () => {
-                // 若视频迅速可播，维持既定自动关闭
-            }, { once: true });
+            // 移除自动收起逻辑
 
-            // 交互按钮：尽可能让用户快速进入
-            skipBtn.addEventListener('click', hideWelcome);
-            enterBtn.addEventListener('click', hideWelcome);
-
-            // 兜底：视频加载失败也能进入
-            wVideo.addEventListener('error', () => {
-                clearTimeout(autoTimer);
-                autoTimer = setTimeout(hideWelcome, 1200);
+            // 关键优化：进入按钮增加麦克风权限请求
+            enterBtn.addEventListener('click', async () => {
+                await checkMicPermissionAndResumeAudio();
+                hideWelcome();
             });
 
-            // 如果用户立即操作页面其它交互，也关闭欢迎层
-            document.addEventListener('keydown', hideWelcome, { once: true });
-            document.addEventListener('touchstart', () => { if (!welcome.classList.contains('hidden')) hideWelcome(); }, { once: true, passive: true });
+            skipBtn.addEventListener('click', hideWelcome);
+
+            // 兜底：视频加载失败也能进入
+            wVideo.addEventListener('error', hideWelcome, { once: true });
+
+            // 确保视频循环播放
+            wVideo.loop = true;
         })();
 
         // ================= 数据配置区 (未修改) =================
@@ -658,6 +687,7 @@
         let isRecording = false;
         let recordedMimeType = '';
         let animationFrameId = null; // 关键：Canvas 绘制循环的 ID
+        let hasMicPermission = false; // 关键：麦克风权限状态
 
         // 合成进度控制
         let processingInterval = null;
@@ -673,6 +703,69 @@
         const isWeChat = /MicroMessenger/i.test(ua);
         const isIOS = /iPhone|iPad|iPod/i.test(ua);
         const isSafari = /Safari/i.test(ua) && !/Chrome/i.test(ua); // 简单的Safari检测
+
+
+        // ================= 麦克风权限和AudioContext初始化（新增/修改） =================
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+
+        function initializeAudioContext() {
+            if (!audioCtx || audioCtx.state === 'closed') {
+                audioCtx = new AudioContext();
+            }
+        }
+
+        async function checkMicPermissionAndResumeAudio() {
+            // 确保 AudioContext 已初始化
+            initializeAudioContext();
+            
+            // 首次用户手势尝试恢复 AudioContext，解决 iOS 自动播放限制
+            if (audioCtx.state === 'suspended') {
+                try {
+                    await audioCtx.resume();
+                } catch(e) {
+                    console.warn("AudioContext resume failed:", e);
+                }
+            }
+
+            if (hasMicPermission && micStream) {
+                return true;
+            }
+
+            try {
+                // 申请麦克风权限
+                micStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+                hasMicPermission = true;
+                
+                // 确保在获取到流后 AudioContext 仍然是活动的
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                }
+
+                return true;
+            } catch (err) {
+                console.error("麦克风权限被拒绝或获取失败:", err);
+                hasMicPermission = false;
+                showMicErrorHint();
+                return false;
+            }
+        }
+
+        function showMicErrorHint() {
+            const overlay = document.getElementById('micAuthErrorOverlay');
+            overlay.style.display = 'flex';
+        }
+
+        function closeMicErrorHint() {
+            const overlay = document.getElementById('micAuthErrorOverlay');
+            overlay.style.display = 'none';
+        }
+
 
         // ================= 初始化 (未修改) =================
         const levels = Object.keys(videoDatabase);
@@ -822,7 +915,6 @@
         // ================= 核心录制逻辑 (已修改) =================
         function getBestMimeType() {
             // 针对 Safari/iOS 优先使用 MP4 H.264 或更高效率的 HEVC (hvc1)
-            // Safari通常更喜欢 MP4/H.264
             const types = [
                 "video/mp4;codecs=avc1", // H.264
                 "video/mp4;codecs=hvc1", // HEVC (iOS 13+ support)
@@ -845,6 +937,7 @@
             if (isRecording) {
                 stopRecording();
             } else {
+                // 重新调用 prepareAndStartRecording 以进行权限检查
                 prepareAndStartRecording();
             }
         }
@@ -856,17 +949,10 @@
                 return;
             }
 
-            try {
-                // 申请麦克风权限
-                micStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
-                    }
-                });
-            } catch (err) {
-                alert("无法获取麦克风权限！请在手机设置/浏览器设置中允许使用麦克风。");
+            // 关键优化：再次检查麦克风权限
+            const permissionGranted = await checkMicPermissionAndResumeAudio();
+            if (!permissionGranted) {
+                // 如果没有权限，checkMicPermissionAndResumeAudio() 会显示错误提示，这里直接返回
                 return;
             }
 
@@ -928,11 +1014,8 @@
             const status = document.getElementById("statusText");
             const actionBtn = document.getElementById("actionBtn");
 
-            // 1. 启动视频播放
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            if (!audioCtx || audioCtx.state === 'closed') {
-                audioCtx = new AudioContext();
-            } else if (audioCtx.state === 'suspended') {
+            // 1. 启动视频播放和 AudioContext 恢复
+            if (audioCtx.state === 'suspended') {
                 await audioCtx.resume();
             }
 
@@ -944,8 +1027,11 @@
             try {
                 await video.play();
             } catch (e) {
-                alert("自动播放失败，请点击屏幕");
+                // 如果用户没有点击屏幕，自动播放可能会失败。
+                console.error("Video play failed:", e);
+                alert("自动播放失败，请点击屏幕上的视频播放键。");
                 video.controls = true;
+                stopRecording();
                 return;
             }
 
@@ -958,16 +1044,24 @@
             drawToCanvas(video, ctx, canvas); 
             
             // 使用 canvas.captureStream 获取视频轨道
-            // Safari/iOS 需要在用户操作后才能获取流，因此放在这里
-            // 参数 25 表示 25 FPS
-            canvasStream = canvas.captureStream(25);
-            const canvasVideoTrack = canvasStream.getVideoTracks()[0];
-            if (!canvasVideoTrack) {
-                alert("未能获取视频画面轨道（Canvas捕获失败），请重试。");
+            // 关键：在用户手势后才调用此API
+            try {
+                // 参数 25 表示 25 FPS
+                canvasStream = canvas.captureStream(25);
+            } catch(e) {
+                console.error("Canvas captureStream failed:", e);
+                alert("画面捕获失败：浏览器不支持Canvas流捕获。请尝试更新浏览器。");
                 stopRecording();
                 return;
             }
 
+            const canvasVideoTrack = canvasStream.getVideoTracks()[0];
+            if (!canvasVideoTrack) {
+                // 这个错误对应用户原问题：Canvas捕获失败
+                alert("未能获取视频画面轨道（Canvas捕获失败），请重试。");
+                stopRecording();
+                return;
+            }
 
             // 3. 混合音频轨道 (Web Audio API)
             dest = audioCtx.createMediaStreamDestination();
@@ -977,23 +1071,30 @@
             videoGainNode.gain.value = 0.8; // 降低原视频音量
 
             // 连接麦克风
-            sourceMic = audioCtx.createMediaStreamSource(micStream);
-            sourceMic.connect(micGainNode);
-            micGainNode.connect(dest);
+            if (micStream && micStream.getAudioTracks().length > 0) {
+                sourceMic = audioCtx.createMediaStreamSource(micStream);
+                sourceMic.connect(micGainNode);
+                micGainNode.connect(dest);
+            } else {
+                // 这个错误对应用户原问题：麦克风未授权 (但应该在 prepareAndStartRecording 被拦截)
+                console.error("麦克风流不存在或无音频轨道。");
+                alert("麦克风未成功获取，请检查权限。");
+                stopRecording();
+                return;
+            }
 
             // 连接原视频音频
             try {
-                // video.captureStream() 在 Safari 上可能获取不到音频轨道，但可以通过 AudioContext 独立获取
+                // 确保视频有音频轨
                 if (video.captureStream) {
                     videoStream = video.captureStream();
                 } else {
-                    // 兼容旧版 Safari 获取音频（如果视频有音频）
                     videoStream = video.mozCaptureStream ? video.mozCaptureStream() : null;
                 }
                 
                 if (videoStream && videoStream.getAudioTracks().length > 0) {
-                     // 确保只创建一次 SourceNode
                     if (!video._streamAudioSourceNode) {
+                        // 必须确保 sourceNode 来源于用户手势激活的 AudioContext
                         sourceVideo = audioCtx.createMediaStreamSource(videoStream);
                         video._streamAudioSourceNode = sourceVideo;
                     } else {
@@ -1006,13 +1107,15 @@
                     sourceVideo.connect(audioCtx.destination);
                 }
             } catch (e) {
-                console.error("Audio routing error, maybe CORS:", e);
-                // 即使音频混合失败，继续录制，但只录制麦克风和画面。
+                console.warn("原视频音频路由失败 (可能跨域或无音轨):", e);
+                // 即使失败，继续录制，但只录制麦克风和画面。
             }
 
             const mixedAudioTrack = dest.stream.getAudioTracks()[0];
+            // 尽管原视频音频可能失败，但麦克风音频必须成功，所以 mixedAudioTrack 应该存在
             if (!mixedAudioTrack) {
-                alert("无法获取混合音频轨道，请重试。");
+                console.error("无法获取混合音频轨道。");
+                alert("录制初始化失败：无法创建音频轨道。");
                 stopRecording();
                 return;
             }
@@ -1025,9 +1128,10 @@
 
             recordedMimeType = getBestMimeType();
             try {
+                // 降低 videoBitsPerSecond 提高兼容性
                 mediaRecorder = recordedMimeType
-                    ? new MediaRecorder(combinedStream, { mimeType: recordedMimeType, videoBitsPerSecond: 3000000 })
-                    : new MediaRecorder(combinedStream, { videoBitsPerSecond: 3000000 });
+                    ? new MediaRecorder(combinedStream, { mimeType: recordedMimeType, videoBitsPerSecond: 2000000 }) 
+                    : new MediaRecorder(combinedStream, { videoBitsPerSecond: 2000000 });
             } catch (e) {
                 console.error("Recorder init fail:", e);
                 alert("MediaRecorder初始化失败，请更换浏览器。");
@@ -1047,8 +1151,13 @@
             };
 
             mediaRecorder.onstop = () => {
-                console.log("Recorder stopped.");
-                // 结束进度到 100%，再生成视频与展示结果
+                console.log("Recorder stopped. Chunks length:", recordedChunks.length);
+                if (recordedChunks.length === 0) {
+                    // 关键：二次确认，如果数据为空，给出明确提示
+                    alert("录制失败：未捕获到任何视频数据。可能是麦克风/Canvas权限或捕获API被浏览器限制。");
+                    resetRecording();
+                    return;
+                }
                 finishProcessingOverlayThen(() => {
                     generateVideoAndShowResult();
                 });
@@ -1087,7 +1196,7 @@
                 }
             } catch (e) {
                 console.error("Canvas Draw Error:", e);
-                // 如果出现跨域错误，立即停止
+                // 关键优化：如果出现跨域错误，立即停止
                 isRecording = false;
                 exitFullscreenMode();
                 alert("录制中断：视频跨域限制(CORS)。请联系管理员确保视频源支持CORS。");
@@ -1124,8 +1233,9 @@
 
             // 清理所有流
             if (micStream) {
-                micStream.getTracks().forEach(track => track.stop());
-                micStream = null;
+                // 注意：这里不能直接 micStream.getTracks().forEach(track => track.stop());
+                // 因为 micStream 可能被 AudioContext 内部使用，停止它可能导致 MediaRecorder 捕获到空数据
+                // 更好的做法是依赖 MediaRecorder.onstop 清理
             }
 
             if (videoStream) {
@@ -1140,11 +1250,13 @@
             
             // 清理 AudioContext 节点连接
             if (audioCtx) {
+                // 仅断开连接，不关闭 AudioContext，方便下次录制
                 if(sourceMic) sourceMic.disconnect();
                 if(sourceVideo) sourceVideo.disconnect();
                 if(micGainNode) micGainNode.disconnect();
                 if(videoGainNode) videoGainNode.disconnect();
                 if(dest) dest.disconnect();
+                // 确保 AudioContext 在用户离开后可以被垃圾回收或在下次被激活
             }
 
 
