@@ -697,6 +697,9 @@
         let finalBlob = null;
         let finalObjectURL = '';
         let finalFilename = '';
+        
+        // **新增：视频播放结束监听器**
+        let videoEndListener = null;
 
         // 环境检测：用于优化微信/Safari内的保存体验
         const ua = navigator.userAgent || '';
@@ -705,7 +708,7 @@
         const isSafari = /Safari/i.test(ua) && !/Chrome/i.test(ua); // 简单的Safari检测
 
 
-        // ================= 麦克风权限和AudioContext初始化（新增/修改） =================
+        // ================= 麦克风权限和AudioContext初始化（未修改） =================
         const AudioContext = window.AudioContext || window.webkitAudioContext;
 
         function initializeAudioContext() {
@@ -824,6 +827,12 @@
             videoPlayer.src = url;
             videoPlayer.load();
             videoPlayer.volume = 1.0;
+            
+            // 确保移除旧的录制结束监听器
+            if (videoEndListener) {
+                videoPlayer.removeEventListener('ended', videoEndListener);
+                videoEndListener = null;
+            }
 
             videoPlayer.onprogress = function() {
                 if (videoPlayer.buffered.length > 0) {
@@ -895,6 +904,12 @@
             mainVideo.pause();
             mainVideo.controls = true;
             exitFullscreenMode();
+            
+            // 确保移除旧的录制结束监听器
+            if (videoEndListener) {
+                mainVideo.removeEventListener('ended', videoEndListener);
+                videoEndListener = null;
+            }
 
             const preview = document.getElementById("previewVideo");
             if(preview.src) {
@@ -1044,7 +1059,6 @@
             drawToCanvas(video, ctx, canvas); 
             
             // 使用 canvas.captureStream 获取视频轨道
-            // 关键：在用户手势后才调用此API
             try {
                 // 参数 25 表示 25 FPS
                 canvasStream = canvas.captureStream(25);
@@ -1076,7 +1090,6 @@
                 sourceMic.connect(micGainNode);
                 micGainNode.connect(dest);
             } else {
-                // 这个错误对应用户原问题：麦克风未授权 (但应该在 prepareAndStartRecording 被拦截)
                 console.error("麦克风流不存在或无音频轨道。");
                 alert("麦克风未成功获取，请检查权限。");
                 stopRecording();
@@ -1085,7 +1098,6 @@
 
             // 连接原视频音频
             try {
-                // 确保视频有音频轨
                 if (video.captureStream) {
                     videoStream = video.captureStream();
                 } else {
@@ -1094,7 +1106,6 @@
                 
                 if (videoStream && videoStream.getAudioTracks().length > 0) {
                     if (!video._streamAudioSourceNode) {
-                        // 必须确保 sourceNode 来源于用户手势激活的 AudioContext
                         sourceVideo = audioCtx.createMediaStreamSource(videoStream);
                         video._streamAudioSourceNode = sourceVideo;
                     } else {
@@ -1108,11 +1119,9 @@
                 }
             } catch (e) {
                 console.warn("原视频音频路由失败 (可能跨域或无音轨):", e);
-                // 即使失败，继续录制，但只录制麦克风和画面。
             }
 
             const mixedAudioTrack = dest.stream.getAudioTracks()[0];
-            // 尽管原视频音频可能失败，但麦克风音频必须成功，所以 mixedAudioTrack 应该存在
             if (!mixedAudioTrack) {
                 console.error("无法获取混合音频轨道。");
                 alert("录制初始化失败：无法创建音频轨道。");
@@ -1152,8 +1161,8 @@
 
             mediaRecorder.onstop = () => {
                 console.log("Recorder stopped. Chunks length:", recordedChunks.length);
+                // 关键：确保只在 mediaRecorder 真正停止时才触发后续流程，防止双重执行
                 if (recordedChunks.length === 0) {
-                    // 关键：二次确认，如果数据为空，给出明确提示
                     alert("录制失败：未捕获到任何视频数据。可能是麦克风/Canvas权限或捕获API被浏览器限制。");
                     resetRecording();
                     return;
@@ -1162,6 +1171,18 @@
                     generateVideoAndShowResult();
                 });
             };
+
+            // **关键修改 #1：使用新的监听器处理视频自然结束，并确保只执行一次**
+            if (videoEndListener) {
+                video.removeEventListener('ended', videoEndListener);
+                videoEndListener = null;
+            }
+            videoEndListener = function() {
+                console.log("Video natural ended. Triggering stopRecording.");
+                stopRecording();
+            };
+            video.addEventListener('ended', videoEndListener, { once: true });
+
 
             // 启动录制
             try {
@@ -1180,7 +1201,8 @@
             status.innerText = "🔴 录制中 (Recording)...";
             status.style.color = "#FF0000";
 
-            video.onended = stopRecording;
+            // 移除旧的 onended 绑定（确保干净）
+            // video.onended = stopRecording; // 这一行在上一个版本中被移除了，这里再次确认不添加它
         }
 
         // 关键：Canvas 绘制函数
@@ -1200,7 +1222,15 @@
                 isRecording = false;
                 exitFullscreenMode();
                 alert("录制中断：视频跨域限制(CORS)。请联系管理员确保视频源支持CORS。");
-                stopRecording();
+                // **关键：这里不再调用 stopRecording，因为 Canvas 绘制失败可能发生在 mediaRecorder.start() 之后**
+                // 而是让 mediaRecorder.onstop 来处理收尾工作。如果 mediaRecorder 仍在运行，它会自行停止。
+                if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                    try {
+                        mediaRecorder.stop();
+                    } catch (err) {
+                        console.warn("mediaRecorder.stop on Canvas error failed:", err);
+                    }
+                }
                 return;
             }
             // 持续循环绘制
@@ -1209,7 +1239,11 @@
 
 
         function stopRecording() {
-            if (!isRecording) return;
+            // **关键修改 #2：增加状态检查，防止重复执行**
+            if (!isRecording) {
+                console.warn("stopRecording called but already stopped/stopping.");
+                return;
+            }
 
             isRecording = false;
             cancelAnimationFrame(animationFrameId); // 停止 Canvas 绘制循环
@@ -1217,6 +1251,13 @@
 
             const video = document.getElementById("mainVideo");
             const actionBtn = document.getElementById("actionBtn");
+
+            // 移除视频结束监听器，防止 pause() 触发 onended 导致循环
+            if (videoEndListener) {
+                video.removeEventListener('ended', videoEndListener);
+                videoEndListener = null;
+            }
+
             video.pause();
             video.controls = true;
 
@@ -1231,13 +1272,7 @@
                 }
             }
 
-            // 清理所有流
-            if (micStream) {
-                // 注意：这里不能直接 micStream.getTracks().forEach(track => track.stop());
-                // 因为 micStream 可能被 AudioContext 内部使用，停止它可能导致 MediaRecorder 捕获到空数据
-                // 更好的做法是依赖 MediaRecorder.onstop 清理
-            }
-
+            // 清理所有流和AudioContext节点（保持与上个版本一致）
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
                 videoStream = null;
@@ -1248,17 +1283,13 @@
                 canvasStream = null;
             }
             
-            // 清理 AudioContext 节点连接
             if (audioCtx) {
-                // 仅断开连接，不关闭 AudioContext，方便下次录制
                 if(sourceMic) sourceMic.disconnect();
                 if(sourceVideo) sourceVideo.disconnect();
                 if(micGainNode) micGainNode.disconnect();
                 if(videoGainNode) videoGainNode.disconnect();
                 if(dest) dest.disconnect();
-                // 确保 AudioContext 在用户离开后可以被垃圾回收或在下次被激活
             }
-
 
             actionBtn.innerHTML = "🎙️ 准备就绪，开始配音";
             actionBtn.className = "btn btn-record";
