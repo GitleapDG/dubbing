@@ -334,8 +334,7 @@
     /* 叠加覆盖层 */
     .record-overlay {
       position: absolute;
-      top: 8px;
-      right: 8px;
+      top: 8px; right: 8px;
       display: none;
       gap: 6px;
       z-index: 999;
@@ -922,8 +921,7 @@
       mainVideo.currentTime = 0;
       mainVideo.pause();
       mainVideo.controls = true;
-      mainVideo.muted = false; // 取消静音，确保可听到原片声音
-      exitFullscreenMode();
+      // 注意：已取消静音控制，不强制解除静音
 
       const preview = document.getElementById("previewVideo");
       if(preview.src) {
@@ -1042,7 +1040,7 @@
       }
 
       video.currentTime = 0;
-      video.muted = false; // 取消静音环节：允许原声与麦克风混音输出
+      // 不再强制静音，确保原声与麦克风混音输出正常
       video.volume = 1.0;
       video.controls = false;
 
@@ -1067,7 +1065,7 @@
 
       const canvasVideoTrack = canvasStream.getVideoTracks()[0];
       if (!canvasVideoTrack) {
-        alert("未能获取视频画面轨道（Canvas捕获失败），请重试。");
+        alert("未能获取视频轨道，请重试。");
         return;
       }
 
@@ -1095,7 +1093,7 @@
         sourceVideo.connect(videoGainNode);
         // 将混合音频加入 dest
         videoGainNode.connect(dest);
-        // 同时对监听输出进行监听：将 dest 连接到实际音频输出
+        // 监听监听输出：将 dest 连接到实际音频输出
         dest.connect(audioCtx.destination);
       } catch (e) {
         console.warn("MediaElementAudioSourceNode 不可用，尝试回退流路由:", e);
@@ -1119,17 +1117,21 @@
       }
 
       const mixedAudioTrack = dest.stream.getAudioTracks()[0];
-      if (!mixedAudioTrack) {
-        console.error("无法获取混合音频轨道。");
-        alert("录制初始化失败：无法创建音频轨道。");
-        return;
+      let combinedStream;
+      if (mixedAudioTrack) {
+        // 4. 组合最终流 (Canvas 视频轨道 + 混合音频轨道)
+        combinedStream = new MediaStream([canvasVideoTrack, mixedAudioTrack]);
+      } else {
+        // 回退：若没有混合音频轨道，尝试使用麦克风音轨作为音源
+        const micTrack = micStream && micStream.getAudioTracks().length > 0 ? micStream.getAudioTracks()[0] : null;
+        if (micTrack) {
+          combinedStream = new MediaStream([canvasVideoTrack, micTrack]);
+        } else {
+          console.error("无法获取音频轨道。");
+          alert("录制初始化失败：无法创建音频轨道。请检查麦克风权限或浏览器支持。");
+          return;
+        }
       }
-
-      // 4. 组合最终流 (Canvas 视频轨道 + 混合音频轨道)
-      const combinedStream = new MediaStream([
-        canvasVideoTrack,
-        mixedAudioTrack
-      ]);
 
       recordedMimeType = getBestMimeType();
       try {
@@ -1154,7 +1156,7 @@
       mediaRecorder.onstop = () => {
         console.log("Recorder stopped. Chunks length:", recordedChunks.length);
         if (recordedChunks.length === 0) {
-          alert("录制失败：未捕获到任何视频数据。可能是麦克风/Canvas权限或捕获API被浏览器限制。");
+          alert("录制失败：数据为空。可能是Canvas捕获失败或麦克风未授权。");
           resetRecording();
           return;
         }
@@ -1221,7 +1223,6 @@
       const actionBtn = document.getElementById("actionBtn");
       video.pause();
       video.controls = true;
-      video.muted = false; // 保证回放端仍可听到原声（配合耳机使用）
 
       // 隐藏右上角覆盖层
       const overlay = document.getElementById('recordOverlay');
