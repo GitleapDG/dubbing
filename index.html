@@ -38,111 +38,42 @@
       transition: all 0.3s ease;
     }
 
-    /* 全屏欢迎动画（替换原 header） */
-    .welcome-screen {
-      position: fixed;
-      inset: 0;
-      z-index: 100000;
+    /* 顶部操作栏（放在右上角） */
+    .topbar {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      background: radial-gradient(1200px 600px at 50% -10%, #ffb3b3, #ff6f6f, #f38181 60%, #111 100%);
-      overflow: hidden;
-      opacity: 1;
-      transition: opacity .6s ease, visibility .6s ease;
-      visibility: visible;
-    }
-    .welcome-screen.hidden {
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
-    }
-    .welcome-bgvideo {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      filter: saturate(1.1) contrast(1.05) brightness(0.9);
-    }
-    .welcome-overlay {
-      position: relative;
-      z-index: 2;
-      text-align: center;
-      color: #fff;
-      padding: 20px;
-    }
-    .welcome-title {
-      font-weight: 900;
-      font-size: 34px;
-      letter-spacing: 1px;
-      text-shadow: 3px 3px 0 rgba(0,0,0,0.18);
-      animation: titlePop .9s cubic-bezier(.2,.9,.2,1.2);
-    }
-    .welcome-subtitle {
-      margin-top: 8px;
-      font-size: 16px;
-      opacity: .95;
-      text-shadow: 2px 2px 0 rgba(0,0,0,0.12);
-      animation: fadeIn .8s ease .2s both;
-    }
-    .welcome-cta {
-      margin-top: 18px;
-      display: inline-flex;
-      align-items: center;
+      justify-content: flex-end;
       gap: 8px;
-      padding: 10px 16px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.18);
-      color: #fff;
-      font-weight: 800;
-      border: 1px solid rgba(255,255,255,0.35);
-      backdrop-filter: blur(6px);
-      cursor: pointer;
-      user-select: none;
-      transition: transform .12s ease, background .2s ease;
-      animation: fadeIn .8s ease .35s both;
-    }
-    .welcome-cta:active { transform: translateY(1px) scale(0.99); }
-    .welcome-skip {
       position: absolute;
       right: 12px;
-      top: 12px;
-      z-index: 3;
-      padding: 8px 12px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.5);
-      background: rgba(0,0,0,0.25);
-      color: #fff;
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-      backdrop-filter: blur(3px);
-    }
-    .confetti {
-      position: absolute;
-      bottom: -20px;
-      width: 8px; height: 14px;
-      border-radius: 3px;
-      opacity: .9;
-      animation-name: riseSpin;
-      animation-timing-function: linear;
-      animation-iteration-count: infinite;
+      top: -18px;
+      z-index: 5;
     }
 
-    @keyframes titlePop {
-      0% { transform: translateY(6px) scale(.92); opacity: 0; }
-      60% { transform: translateY(-2px) scale(1.02); opacity: 1; }
-      100% { transform: translateY(0) scale(1); }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 25px;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      color: white;
+      transition: all 0.2s;
+      box-shadow: var(--shadow-3d);
     }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px) }
-      to { opacity: 1; transform: translateY(0) }
-    }
-    @keyframes riseSpin {
-      0% { transform: translateY(0) rotate(0deg); opacity: .0; }
-      10% { opacity: .9; }
-      100% { transform: translateY(-120vh) rotate(360deg); opacity: 0; }
+    .btn:active { transform: translateY(2px); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .btn-primary { background: linear-gradient(135deg, #a8e063 0%, #56ab2f 100%); }
+    .btn-stop { background: linear-gradient(135deg, #f06, #f66); }
+    .btn-retry { background: #dfe6e9; color: #636e72; box-shadow: 0 4px 0 #b2bec3; }
+    .btn-download {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      text-decoration: none; line-height: 1.5; flex: 1; display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer; color: #fff; font-weight: bold; border-radius: 25px; box-shadow: 0 6px 0 rgba(0,0,0,0.1);
+      font-size: 16px; padding: 14px;
     }
 
     /* 标题 */
@@ -219,7 +150,6 @@
       display: block;
       width: 100%;
       padding: 16px;
-      border: none;
       border-radius: 25px;
       font-size: 18px;
       font-weight: 800;
@@ -231,7 +161,6 @@
       position: relative;
       overflow: hidden;
     }
-    .btn:active { transform: translateY(4px); box-shadow: 0 2px 0 rgba(0,0,0,0.1); }
     .btn:disabled {
       background: #e0e0e0; color: #aaa; cursor: not-allowed; box-shadow: none; transform: none;
     }
@@ -246,13 +175,6 @@
       animation: pulse 1.5s infinite; position: relative; z-index: 1002;
     }
     .btn-group { display: flex; gap: 15px; margin-top: 15px; }
-    .btn-download {
-      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-      text-decoration: none; line-height: 1.5; flex: 1; display: flex; align-items: center; justify-content: center;
-      cursor: pointer; color: #fff; font-weight: bold; border-radius: 25px; box-shadow: 0 6px 0 rgba(0,0,0,0.1);
-      font-size: 18px; padding: 16px; border: none;
-    }
-    .btn-retry { background: #dfe6e9; color: #636e72; box-shadow: 0 4px 0 #b2bec3; flex: 1; }
 
     @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }
     @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
@@ -280,16 +202,8 @@
       font-size: 13px; color: #e67e22; margin-top: 12px; background: #fff3e0; padding: 12px; border-radius: 15px;
       border: none; box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
     }
-    .headphone-tip {
-      margin: 8px 0 0 0;
-      background: #fff3e0;
-      color: #8b6a00;
-      padding: 10px 12px;
-      border-radius: 10px;
-      text-align: left;
-      font-size: 13px;
-    }
 
+    /* 监听路径相关（音频输出） */
     /* 录制时全屏（修复竖屏偏移） */
     body.recording-mode { overflow: hidden; background: #000; padding: 0; }
     body.recording-mode .container {
@@ -387,7 +301,7 @@
       .welcome-screen, .welcome-title, .welcome-subtitle, .confetti, .welcome-cta { animation: none !important; }
     }
     
-    /* 麦克风授权失败的提示框 */
+    /* 麦克风授权失败的提示框（保留，仍可使用，但默认不显示） */
     #micErrorOverlay {
       background: rgba(255, 82, 83, 0.95);
       font-family: sans-serif;
@@ -459,6 +373,11 @@
   </div>
 
   <div class="container">
+    <div class="topbar">
+      <button id="backBtn" class="btn btn-retry" title="返回">返回</button>
+      <button id="finishBtn" class="btn btn-stop" title="完成配音">完成配音</button>
+    </div>
+
     <h1>Firstleap Voice Magic<br><span style="font-size:18px; color:#888; font-weight:normal;">奇声妙想配音秀</span></h1>
 
     <div class="step-label"><span class="step-badge">1</span>选择级别</div>
@@ -491,17 +410,14 @@
         您的浏览器不支持视频标签。
       </video>
 
-      <!-- 右上角覆盖层：仅显示暂停按钮，取消“完成配音”按钮 -->
+      <!-- 右上角覆盖层：显示暂停按钮，取消“完成配音”按钮 -->
       <div id="recordOverlay" class="record-overlay" aria-label="录制控制" style="display:none;">
         <button id="pauseToggleBtn" class="btn pause" onclick="togglePauseDuringRecording()">暂停</button>
       </div>
 
-      <!-- 人性化：佩戴耳机提示（可一直显示，鼓励配音时佩戴耳机） -->
-      <div class="headphone-tip" id="headphoneTips" style="display:block;">
-        请佩戴耳机进行配音，避免回声与麦克风自啸。若使用扬声器，请将音量调低并确保环境安静。
-      </div>
-
-      <div class="tip" style="margin-top: 6px;">🎧 <b>温馨提示：</b>配音前请佩戴耳机，以防回声啸叫！</div>
+      <!-- 人性化：佩戴耳机提示已移除，改为更简洁提示（若需要可自行添加） -->
+      <!-- 仍可使用：配音前的基本提示信息 -->
+      <div class="tip" style="margin-top: 6px;">🎧 温馨提示：配音前请确保环境安静，麦克风距离嘴部适中。</div>
       <div class="status-text" id="statusText"></div>
 
       <button class="btn btn-play" id="playBtn" onclick="togglePreview()">▶️ 预览原片 Preview</button>
@@ -524,7 +440,7 @@
 
       <div class="btn-group">
         <button class="btn btn-retry" onclick="resetRecording()">🔄 重录 Retry</button>
-        <a id="downloadLink" class="btn btn-download" style="display: none;">💾 保存/分享视频</a>
+        <a id="downloadLink" class="btn-download" style="display: none;">💾 保存/分享视频</a>
       </div>
 
       <div id="waitingHint" style="text-align: center; margin: 20px 0; display: none;">
@@ -921,7 +837,6 @@
       mainVideo.currentTime = 0;
       mainVideo.pause();
       mainVideo.controls = true;
-      // 注意：已取消静音控制，不强制解除静音
 
       const preview = document.getElementById("previewVideo");
       if(preview.src) {
@@ -1040,7 +955,6 @@
       }
 
       video.currentTime = 0;
-      // 不再强制静音，确保原声与麦克风混音输出正常
       video.volume = 1.0;
       video.controls = false;
 
@@ -1073,46 +987,54 @@
       dest = audioCtx.createMediaStreamDestination();
       micGainNode = audioCtx.createGain();
       videoGainNode = audioCtx.createGain();
-      micGainNode.gain.value = 1.2;
+      micGainNode.gain.value = 1.5;
       videoGainNode.gain.value = 1.0;
 
+      // 麦克风源
       if (micStream && micStream.getAudioTracks().length > 0) {
         sourceMic = audioCtx.createMediaStreamSource(micStream);
         sourceMic.connect(micGainNode);
         micGainNode.connect(dest);
       } else {
         console.warn("尚无麦克风音频轨道，录制将不含麦克风音频。");
-        // 仍然可以继续，只是不含麦克风音频
       }
 
+      // 视频音频源（用于混音并写入最终流）
       try {
         if (!video._elementAudioSource) {
           video._elementAudioSource = audioCtx.createMediaElementSource(video);
         }
         sourceVideo = video._elementAudioSource;
+        // 监听路径：让视频声音在现场可听
+        const monitorGain = audioCtx.createGain();
+        monitorGain.gain.value = 1.0;
+        sourceVideo.connect(monitorGain);
+        monitorGain.connect(audioCtx.destination);
+
+        // 混合路径：视频音频进入 dest，最终用于录制
         sourceVideo.connect(videoGainNode);
-        // 将混合音频加入 dest
         videoGainNode.connect(dest);
-        // 监听监听输出：将 dest 连接到实际音频输出
+
+        // dest 输出到浏览器声卡
         dest.connect(audioCtx.destination);
       } catch (e) {
-        console.warn("MediaElementAudioSourceNode 不可用，尝试回退流路由:", e);
+        console.warn("原视频音频路由失败:", e);
+        // 回退：若不可用，仍尝试仅通过麦克风+画面录制
         try {
           if (video.captureStream) {
             videoStream = video.captureStream();
-          } else {
-            videoStream = video.mozCaptureStream ? video.mozCaptureStream() : null;
+          } else if (video.mozCaptureStream) {
+            videoStream = video.mozCaptureStream();
           }
           if (videoStream && videoStream.getAudioTracks().length > 0) {
+            // 简化路径：仅用视频的音频轨道
             sourceVideo = audioCtx.createMediaStreamSource(videoStream);
             sourceVideo.connect(videoGainNode);
             videoGainNode.connect(dest);
             dest.connect(audioCtx.destination);
-          } else {
-            console.warn("回退流中无音频轨道，仅录制麦克风。");
           }
         } catch (e2) {
-          console.warn("原视频音频路由失败:", e2);
+          console.warn("回退流路由失败:", e2);
         }
       }
 
@@ -1263,6 +1185,8 @@
       actionBtn.className = "btn btn-record";
       document.getElementById("statusText").innerText = "✨ 视频生成中，请稍候...";
       document.getElementById("statusText").style.color = "var(--pear-yellow)";
+      // 隐藏完成按钮，返回到初始状态
+      // 你可以在此处选择是否再次显示“完成配音”按钮
     }
 
     // 合成进度 & 结果展示
@@ -1457,24 +1381,63 @@
       }
     }
 
-    // 初始化
+    // 返回按钮（返回到初始步骤）
+    function goBack() {
+      if (isRecording) {
+        stopRecording();
+      }
+      // 重置到初始状态
+      document.getElementById("video-container").style.display = "none";
+      document.getElementById("resultArea").style.display = "none";
+
+      document.getElementById("levelSelect").value = "";
+      updateUnits();
+      const unitSelect = document.getElementById("unitSelect");
+      unitSelect.value = '';
+
+      const videoPlayer = document.getElementById("mainVideo");
+      videoPlayer.src = '';
+      videoPlayer.load();
+
+      // 滚动回顶部，方便重新选择
+      document.getElementById("levelSelect").scrollIntoView({behavior: "smooth"});
+      document.getElementById("statusText").innerText = "";
+      if (document.getElementById("countdown-overlay").style.display !== 'none') {
+        document.getElementById("countdown-overlay").style.display = 'none';
+      }
+    }
+
+    // 监听器初始化
     document.addEventListener('DOMContentLoaded', () => {
       const downloadBtn = document.getElementById('downloadLink');
+      // 根据环境初始文本调整
       if ((isIOS || isSafari) && supportsFileShare) {
         downloadBtn.textContent = "💾 保存/分享视频";
-        document.getElementById('saveTipText').innerHTML = '* iOS Safari：点击下方“保存/分享视频”，在系统分享面板中选择“存储视频”保存到相册。';
       } else if (isWeChat) {
         downloadBtn.textContent = "💾 保存视频到手机相册 (Save)";
-        document.getElementById('saveTipText').innerHTML = '* 在微信中，请点击上方的 “保存视频” 按钮获取保存指引。';
       } else {
         downloadBtn.textContent = "💾 下载视频 (Download)";
-        document.getElementById('saveTipText').innerHTML = '* 若浏览器未自动下载，请右键/长按保存或在浏览器菜单中选择“下载”。';
       }
 
       const overlay = document.getElementById('recordOverlay');
       if (overlay) overlay.style.display = 'none';
+
+      // 按钮事件绑定（返回 & 完成配音）
+      document.getElementById('backBtn').addEventListener('click', goBack);
+      document.getElementById('finishBtn').addEventListener('click', () => {
+        if (isRecording) {
+          stopRecording();
+        } else {
+          // 如果当前已生成最终文件，可择时进入下载/保存步骤；此处保持简单跳转到结果区不可用时禁用
+          if (finalBlob) {
+            // 允许再次查看结果或重新生成（保持原逻辑）
+            // 这里保持不做额外操作
+          }
+        }
+      });
     });
   </script>
 </body>
 </html>
 
+如果你还想要把“完成配音”按钮在其他条件下显示/隐藏，或者希望返回按钮执行更具体的导航，请告诉我你的偏好，我可以继续微调。
