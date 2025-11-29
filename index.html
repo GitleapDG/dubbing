@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>励步 - 奇声妙想 Firstleap Voice Magic</title>
+  <title>励步 -  Firstleap Voice Magic</title>
   <style>
     :root {
       --bg-cream: #F9F6E8;
@@ -416,7 +416,7 @@
     </video>
     <div class="welcome-overlay">
       <div class="welcome-title">Firstleap Voice Magic</div>
-      <div class="welcome-subtitle">奇声妙想 · 配音秀</div>
+      <div class="welcome-subtitle">配音秀</div>
       <div>
         <button id="welcomeEnterBtn" class="welcome-cta">进入体验 ▶</button>
       </div>
@@ -459,7 +459,7 @@
   </div>
 
   <div class="container">
-    <h1>Firstleap Voice Magic<br><span style="font-size:18px; color:#888; font-weight:normal;">奇声妙想配音秀</span></h1>
+    <h1>Firstleap Voice Magic<br><span style="font-size:18px; color:#888; font-weight:normal;">配音秀</span></h1>
 
     <div class="step-label"><span class="step-badge">1</span>选择级别</div>
     <select id="levelSelect" onchange="updateUnits()">
@@ -1402,7 +1402,7 @@
       try {
         const file = new File([finalBlob], finalFilename || 'Firstleap_Voice.mp4', { type: finalBlob.type || 'video/mp4' });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: 'Firstleap Voice Magic', text: '奇声妙想 · 配音秀' });
+          await navigator.share({ files: [file], title: 'Firstleap Voice Magic', text: '配音秀' });
         } else {
           openWeChatSavePage();
         }
@@ -1477,3 +1477,4 @@
   </script>
 </body>
 </html>
+
