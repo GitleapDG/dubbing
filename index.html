@@ -38,7 +38,7 @@
       transition: all 0.3s ease;
     }
 
-    /* 全屏欢迎动画（替换原 header） */
+    /* 全屏欢迎动画 */
     .welcome-screen {
       position: fixed;
       inset: 0;
@@ -269,6 +269,15 @@
       object-fit: contain;
     }
     video:fullscreen { border: none; border-radius: 0; width: 100%; height: 100%; }
+    
+    /* 关键修复：在录制模式下，强制隐藏video的所有原生控件 */
+    body.recording-mode video::-webkit-media-controls {
+        display: none !important;
+    }
+    body.recording-mode video::-webkit-media-controls-enclosure {
+        display: none !important;
+    }
+
     #processCanvas { display: none; }
     .status-text { margin-top: 15px; font-weight: bold; color: var(--rabbit-red); min-height: 24px; font-size: 15px; }
 
@@ -722,6 +731,10 @@
     let recordedMimeType = '';
     let animationFrameId = null;
     let hasMicPermission = false;
+    
+    // 新增变量：控制 Intro 和 绘制
+    let isIntroMode = false;
+    let introImageObj = null;
 
     // 合成进度控制
     let processingInterval = null;
@@ -844,6 +857,9 @@
       videoPlayer.src = url;
       videoPlayer.load();
       videoPlayer.volume = 1.0;
+      
+      // 重置 controls
+      videoPlayer.controls = true;
 
       videoPlayer.onprogress = function() {
         if (videoPlayer.buffered.length > 0) {
@@ -916,8 +932,7 @@
       const mainVideo = document.getElementById("mainVideo");
       mainVideo.currentTime = 0;
       mainVideo.pause();
-      mainVideo.controls = true;
-      // 注意：已取消静音控制，不强制解除静音
+      mainVideo.controls = true; // 恢复显示控件
 
       const preview = document.getElementById("previewVideo");
       if(preview.src) {
@@ -972,6 +987,9 @@
 
       const permissionGranted = await checkMicPermissionAndResumeAudio();
       if (!permissionGranted) return;
+
+      // 1. 立即隐藏控件，防止出现播放按钮
+      video.controls = false;
 
       const overlay = document.getElementById('countdown-overlay');
       const text = document.getElementById('countdownText');
@@ -1031,23 +1049,14 @@
       const status = document.getElementById("statusText");
       const actionBtn = document.getElementById("actionBtn");
 
+      // 再次确认隐藏控件
+      video.controls = false;
+
       if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
       }
 
-      video.currentTime = 0;
-      // 不再强制静音，确保原声与麦克风混音输出正常
-      video.volume = 1.0;
-      video.controls = false;
-
-      try { await video.play(); } catch (e) {
-        console.error("Video play failed:", e);
-        alert("自动播放失败，请点击屏幕上的视频播放键。");
-        video.controls = true;
-        return;
-      }
-
-      // 画面抓取
+      // 画面抓取设置
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
 
@@ -1069,16 +1078,15 @@
       dest = audioCtx.createMediaStreamDestination();
       micGainNode = audioCtx.createGain();
       videoGainNode = audioCtx.createGain();
-      micGainNode.gain.value = 1.5;
-      videoGainNode.gain.value = 1.2;
+      
+      // 初始化时先静音，防止 Intro 期间有噪音
+      micGainNode.gain.value = 0; 
+      videoGainNode.gain.value = 0;
 
       if (micStream && micStream.getAudioTracks().length > 0) {
         sourceMic = audioCtx.createMediaStreamSource(micStream);
         sourceMic.connect(micGainNode);
         micGainNode.connect(dest);
-      } else {
-        console.warn("尚无麦克风音频轨道，录制将不含麦克风音频。");
-        // 仍然可以继续，只是不含麦克风音频
       }
 
       try {
@@ -1087,46 +1095,20 @@
         }
         sourceVideo = video._elementAudioSource;
         sourceVideo.connect(videoGainNode);
-        // 将混合音频加入 dest
         videoGainNode.connect(dest);
-        // 监听监听输出：将 dest 连接到实际音频输出
         dest.connect(audioCtx.destination);
       } catch (e) {
-        console.warn("MediaElementAudioSourceNode 不可用，尝试回退流路由:", e);
-        try {
-          if (video.captureStream) {
-            videoStream = video.captureStream();
-          } else {
-            videoStream = video.mozCaptureStream ? video.mozCaptureStream() : null;
-          }
-          if (videoStream && videoStream.getAudioTracks().length > 0) {
-            sourceVideo = audioCtx.createMediaStreamSource(videoStream);
-            sourceVideo.connect(videoGainNode);
-            videoGainNode.connect(dest);
-            dest.connect(audioCtx.destination);
-          } else {
-            console.warn("回退流中无音频轨道，仅录制麦克风。");
-          }
-        } catch (e2) {
-          console.warn("原视频音频路由失败:", e2);
-        }
+        console.warn("MediaElementAudioSourceNode fallback logic", e);
       }
 
       const mixedAudioTrack = dest.stream.getAudioTracks()[0];
       let combinedStream;
       if (mixedAudioTrack) {
-        // 4. 组合最终流 (Canvas 视频轨道 + 混合音频轨道)
         combinedStream = new MediaStream([canvasVideoTrack, mixedAudioTrack]);
       } else {
-        // 回退：若没有混合音频轨道，尝试使用麦克风音轨作为音源
+        // Fallback
         const micTrack = micStream && micStream.getAudioTracks().length > 0 ? micStream.getAudioTracks()[0] : null;
-        if (micTrack) {
-          combinedStream = new MediaStream([canvasVideoTrack, micTrack]);
-        } else {
-          console.error("无法获取音频轨道。");
-          alert("录制初始化失败：无法创建音频轨道。请检查麦克风权限或浏览器支持。");
-          return;
-        }
+        if (micTrack) combinedStream = new MediaStream([canvasVideoTrack, micTrack]);
       }
 
       recordedMimeType = getBestMimeType();
@@ -1135,7 +1117,6 @@
           ? new MediaRecorder(combinedStream, { mimeType: recordedMimeType, videoBitsPerSecond: 2000000 })
           : new MediaRecorder(combinedStream, { videoBitsPerSecond: 2000000 });
       } catch (e) {
-        console.error("Recorder init fail:", e);
         alert("MediaRecorder初始化失败，请更换浏览器。");
         return;
       }
@@ -1145,80 +1126,131 @@
         if (e.data && e.data.size > 0) recordedChunks.push(e.data);
       };
 
-      mediaRecorder.onerror = (e) => {
-        console.error("MediaRecorder error:", e);
-      };
-
+      mediaRecorder.onerror = (e) => console.error("MediaRecorder error:", e);
       mediaRecorder.onstop = () => {
-        console.log("Recorder stopped. Chunks length:", recordedChunks.length);
         if (recordedChunks.length === 0) {
-          alert("录制失败：数据为空。可能是Canvas捕获失败或麦克风未授权。");
+          alert("录制失败：数据为空。");
           resetRecording();
           return;
         }
-        finishProcessingOverlayThen(() => {
-          generateVideoAndShowResult();
-        });
+        finishProcessingOverlayThen(() => generateVideoAndShowResult());
       };
 
-      try {
-        mediaRecorder.start(500);
-      } catch (e) {
-        console.error("mediaRecorder.start() failed:", e);
-        alert("启动录制失败，请重试或更换浏览器。");
-        return;
-      }
-
-      isRecording = true;
-      drawToCanvas(video, ctx, canvas);
-
+      // UI 更新
       document.getElementById("playBtn").style.display = "none";
       actionBtn.innerHTML = "⏹️ 完成配音 Stop";
       actionBtn.className = "btn btn-stop";
-      status.innerText = "🔴 录制中 (Recording)...";
-      status.style.color = "#FF0000";
-
-      // 显示右上角控制按钮
       const overlay = document.getElementById('recordOverlay');
       if (overlay) overlay.style.display = 'flex';
-      // 将暂停按钮文本设为默认“暂停”
       const pauseBtn = document.getElementById('pauseToggleBtn');
       if (pauseBtn) pauseBtn.textContent = '暂停';
-      video.onended = stopRecording;
+
+      // --- 修改逻辑：持续绘制 Intro 避免录制中断 ---
+      introImageObj = new Image();
+      introImageObj.crossOrigin = "anonymous";
+      introImageObj.src = "intro.png";
+
+      const startRecorderAndDraw = () => {
+          // 启动录制器
+          try {
+              mediaRecorder.start(500);
+          } catch(e) {
+              alert("录制启动失败"); return;
+          }
+
+          // 标记为开始，进入绘图循环
+          isRecording = true;
+          // 启动 Intro 模式
+          isIntroMode = true;
+          status.innerText = "🎬 Intro 播放中...";
+          status.style.color = "var(--pear-yellow)";
+
+          // 开始绘制循环（此时绘制 Intro）
+          drawToCanvas(video, ctx, canvas);
+
+          // 3秒后切换到视频内容
+          setTimeout(() => {
+              isIntroMode = false; // 切换绘制模式
+              
+              // 恢复音量
+              micGainNode.gain.value = 1.5;
+              videoGainNode.gain.value = 1.2;
+              
+              // 播放视频
+              video.currentTime = 0;
+              video.volume = 1.0;
+              // 再次确保不显示控件
+              video.controls = false; 
+              
+              video.play().then(() => {
+                 status.innerText = "🔴 录制中 (Recording)...";
+                 status.style.color = "#FF0000";
+              }).catch((e) => {
+                 console.error("Play failed:", e);
+                 alert("自动播放失败，请点击屏幕。");
+              });
+              
+              video.onended = stopRecording;
+          }, 3000);
+      };
+
+      introImageObj.onload = () => {
+          startRecorderAndDraw();
+      };
+
+      introImageObj.onerror = () => {
+          // 图片加载失败，跳过 Intro 模式
+          console.warn("intro.png not found, skipping intro.");
+          isIntroMode = false;
+          startRecorderAndDraw(); // 逻辑里会立刻被 setTimeout 覆盖，但没关系，至少能跑
+      };
     }
 
-    // Canvas 绘制函数
+    // Canvas 绘制函数（修改版）
     function drawToCanvas(video, ctx, canvas) {
       if (!isRecording) {
         cancelAnimationFrame(animationFrameId);
         return;
       }
+      
       try {
-        if (video.readyState >= 2 && !video.paused && !video.ended) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (isIntroMode) {
+            // Intro 模式：绘制图片（保持黑底）
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (introImageObj) {
+                ctx.drawImage(introImageObj, 0, 0, canvas.width, canvas.height);
+            }
+        } else {
+            // 视频模式：绘制视频
+            if (video.readyState >= 2 && !video.ended) {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            }
         }
       } catch (e) {
         console.error("Canvas Draw Error:", e);
         isRecording = false;
         exitFullscreenMode();
-        alert("录制中断：视频跨域限制(CORS)。请联系管理员确保视频源支持CORS。");
+        alert("录制中断：视频跨域限制(CORS)。");
         stopRecording();
         return;
       }
+      
       animationFrameId = requestAnimationFrame(() => drawToCanvas(video, ctx, canvas));
     }
 
     function stopRecording() {
-      if (!isRecording) return;
+      if (!mediaRecorder || mediaRecorder.state === "inactive") return;
 
       isRecording = false;
+      isIntroMode = false; // 重置
       cancelAnimationFrame(animationFrameId);
       exitFullscreenMode();
 
       const video = document.getElementById("mainVideo");
       const actionBtn = document.getElementById("actionBtn");
       video.pause();
-      video.controls = true;
+      video.controls = true; // 恢复控件
 
       // 隐藏右上角覆盖层
       const overlay = document.getElementById('recordOverlay');
@@ -1227,9 +1259,7 @@
       actionBtn.disabled = true;
       beginProcessingOverlay();
 
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        try { mediaRecorder.stop(); } catch(e) { console.warn("mediaRecorder.stop error:", e); }
-      }
+      try { mediaRecorder.stop(); } catch(e) { console.warn("mediaRecorder.stop error:", e); }
 
       // 清理回退流
       if (videoStream) {
@@ -1472,7 +1502,3 @@
   </script>
 </body>
 </html>
-
-
-
-
